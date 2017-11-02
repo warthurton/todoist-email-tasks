@@ -1,27 +1,38 @@
-import os
-import sys
-import runpy
+"""
+Do nothing, but document it.
+"""
+
 import base64
-import win32com.client
-import todoist
 import logging
 import logging.handlers
-from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
+import os
+import runpy
+import sys
+from datetime import datetime
+
 import pywintypes
+import todoist
+import win32com.client
+from dateutil.relativedelta import relativedelta
+
+#from datetime import datetime, timedelta
+
 
 MY_LOCATION = os.path.dirname(os.path.realpath(__file__))
 LOG_FILENAME = os.path.join(MY_LOCATION, 'todoist.outlook.log')
 
 # Set up a specific logger with our desired output level
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # Format.
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # Add the log message handler to the logger
-handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=1024*1024, backupCount=5)
+handler = logging.handlers.RotatingFileHandler(
+    LOG_FILENAME, maxBytes=1024 * 5, backupCount=5)
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
@@ -29,20 +40,21 @@ handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+
 def pyWinDate2datetime(now_pytime):
     """Converts pyWinDate to Python datetime. More info:
     http://timgolden.me.uk/python/win32_how_do_i/use-a-pytime-value.html"""
 
-    now_datetime = datetime (
-      year=now_pytime.year,
-      month=now_pytime.month,
-      day=now_pytime.day,
-      hour=now_pytime.hour,
-      minute=now_pytime.minute,
-      second=now_pytime.second
-    )
-    
+    now_datetime = datetime(
+        year=now_pytime.year,
+        month=now_pytime.month,
+        day=now_pytime.day,
+        hour=now_pytime.hour,
+        minute=now_pytime.minute,
+        second=now_pytime.second)
+
     return now_datetime
+
 
 def main():
 
@@ -67,7 +79,7 @@ def main():
 
     # Iterate through messages.
     while message:
-        try:        
+        try:
             start_date = pyWinDate2datetime(message.TaskStartDate)
             end_date = pyWinDate2datetime(message.TaskCompletedDate)
 
@@ -77,35 +89,50 @@ def main():
 
             # If the completion date is recent, then it's actually a completed
             # task and we don't need to generate a task item for it.
-            if (difference_in_years < 10):
+            if difference_in_years < 10:
                 message = todo_items.GetNext()
                 continue
 
+            messageBody = message.Body
+
         except AttributeError as ex:
             message = todo_items.GetNext()
-            continue  
-     
+            continue
+
         # How Todoist generates an ID for an Outlook email:
         # https://todoist.com/Support/show/30790/
 
         # How to get PR_INTERNET_MESSAGE_ID for an Outlook item:
-        # http://www.slipstick.com/developer/read-mapi-properties-exposed-outlooks-object-model/           
-        PR_INTERNET_MESSAGE_ID = message.PropertyAccessor.GetProperty("http://schemas.microsoft.com/mapi/proptag/0x1035001E")
-        todoist_message_id = base64.b64encode(bytes("id={0};mid={1}".format(message.EntryID, PR_INTERNET_MESSAGE_ID), "utf-8")).decode("utf-8")
-        
+        # http://www.slipstick.com/developer/read-mapi-properties-exposed-outlooks-object-model/
+        PR_INTERNET_MESSAGE_ID = message.PropertyAccessor.GetProperty(
+            "http://schemas.microsoft.com/mapi/proptag/0x1035001E")
+        todoist_message_id = base64.b64encode(
+            bytes("id={0};mid={1}".format(message.EntryID,
+                                          PR_INTERNET_MESSAGE_ID),
+                  "utf-8")).decode("utf-8")
+
         # Add a task.
-        item = api.items.add(u'[[outlook=id3={0}, Review Email: {1}]]'.format(todoist_message_id, message.Subject), config["TODOIST_PROJECT_ID_OUTLOOK"], date_string="today")
-        logger.info("Processing '{0}'.".format(message.Subject.encode("utf-8")))
+        item = api.items.add(
+            u'[[outlook=id3={0}, {1}]]'.format(todoist_message_id,
+                                               message.Subject),
+            config["TODOIST_PROJECT_ID_OUTLOOK"],
+            date_string="today")
+        #       item = api.items.add(message.Subject, config["TODOIST_PROJECT_ID_OUTLOOK"], date_string="today")
+        logger.info("Processing '{0}'.".format(
+            message.Subject.encode("utf-8")))
         r = api.commit()
 
         # If error occures, move on.
         if "error_code" in r:
-            logger.info ("Task for email '{0}' was not created. Error: {1}:{2}".format(message.Subject, r["error_code"], r["error_string"]))
+            logger.info(
+                "Task for email '{0}' was not created. Error: {1}:{2}".format(
+                    message.Subject, r["error_code"], r["error_string"]))
             message = todo_items.GetNext()
             continue
 
         # Add a note.
-        note = api.notes.add(item["id"], u'Automatically Generated Task by Todoist Task Creator Script')
+        note = api.notes.add(item["id"], u'[[outlook=id3={0}, {1}]]'.format(
+            todoist_message_id, message.Subject) + "\n" + messageBody)
         r = api.commit()
 
         # Mark message as read.
@@ -113,13 +140,14 @@ def main():
         message.Save()
 
         # Advanced to the next message.
-        message = todo_items.GetNext()        
+        message = todo_items.GetNext()
         total += 1
 
-    if (total == 0):
-        logger.info("No flagged emails found.")
-    else:
+    if (total != 0):
+        #       logger.info("No flagged emails found.")
+        #   else:
         logger.info("{0} flagged emails processed.".format(total))
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     main()
